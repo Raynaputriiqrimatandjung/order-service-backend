@@ -1,19 +1,40 @@
-// FILE: order-service/index.js
+// FILE: order-service/api/index.js
 const express = require('express');
 const mongoose = require('mongoose');
 const axios = require('axios');
 const cors = require('cors');
 const app = express();
 
+// Load dotenv jika berjalan di lokal (opsional di Vercel tapi aman dibiarkan)
 require('dotenv').config(); 
 
 app.use(express.json());
 app.use(cors());
 
-// ==========================================
-// 1. TAMBAHAN RUTE HALAMAN DEPAN (ROOT)
-// ==========================================
-// Ini agar saat link utama dibuka tidak 404
+// 1. KONEKSI DATABASE
+const mongoURI = process.env.MONGO_URL;
+
+if (!mongoURI) {
+    console.error("❌ FATAL ERROR: MONGO_URL tidak ditemukan di Environment Variables!");
+}
+
+mongoose.connect(mongoURI, {
+    serverSelectionTimeoutMS: 5000
+})
+    .then(() => console.log('✅ Transaction DB Connected...'))
+    .catch(err => console.error('❌ DB Connection Error:', err));
+
+// 2. MODEL TRANSAKSI
+// Menggunakan 'mongoose.models.Transaction ||' agar aman di Vercel
+const Transaction = mongoose.models.Transaction || mongoose.model('Transaction', {
+    product_id: String,
+    product_name: String,
+    quantity: Number,
+    total_price: Number,
+    date: { type: Date, default: Date.now }
+});
+
+// 3. RUTE HALAMAN DEPAN (ROOT)
 app.get('/', (req, res) => {
     res.json({
         message: "Order Service is Running... 🚀",
@@ -24,36 +45,7 @@ app.get('/', (req, res) => {
     });
 });
 
-// ==========================================
-// 2. KONEKSI DATABASE
-// ==========================================
-const mongoURI = process.env.MONGO_URL;
-
-// Cek apakah env variable ada (untuk debugging)
-if (!mongoURI) {
-    console.error("❌ FATAL ERROR: MONGO_URL tidak ditemukan di Environment Variables!");
-}
-
-mongoose.connect(mongoURI, {
-    serverSelectionTimeoutMS: 5000
-})
-    .then(() => console.log('Transaction DB Connected... ✅'))
-    .catch(err => console.error('DB Connection Error: ❌', err));
-
-// Model Schema
-const Transaction = mongoose.model('Transaction', {
-    product_id: String,
-    product_name: String,
-    quantity: Number,
-    total_price: Number,
-    date: { type: Date, default: Date.now }
-});
-
-// ==========================================
-// 3. RUTE TRANSAKSI
-// ==========================================
-
-// CREATE TRANSACTION
+// 4. RUTE TRANSAKSI (CREATE)
 app.post('/transactions', async (req, res) => {
     try {
         const { product_id, quantity } = req.body;
@@ -65,7 +57,11 @@ app.post('/transactions', async (req, res) => {
         }
 
         // Panggil Product Service
-        const response = await axios.get(`${PRODUCT_URL}/products/${product_id}`);
+        // Tambahkan header Accept agar responnya pasti JSON
+        const response = await axios.get(`${PRODUCT_URL}/products/${product_id}`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        
         const productData = response.data;
 
         if (!productData) {
@@ -87,8 +83,16 @@ app.post('/transactions', async (req, res) => {
 
     } catch (err) {
         console.error("Error Transaksi:", err.message);
+        // Cek apakah error dari Axios (Product Service mati/error)
+        if (err.response) {
+            return res.status(err.response.status).json({
+                 message: "Gagal mengambil data produk dari Product Service",
+                 detail: err.response.data 
+            });
+        }
+        
         res.status(500).json({ 
-            message: "Gagal transaksi. Pastikan Product Service aktif.",
+            message: "Gagal memproses transaksi.",
             error: err.message 
         });
     }
