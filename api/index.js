@@ -1,17 +1,38 @@
-// FILE: order-service/index.js (atau transaction-service)
+// FILE: order-service/index.js
 const express = require('express');
 const mongoose = require('mongoose');
 const axios = require('axios');
 const cors = require('cors');
 const app = express();
 
-require('dotenv').config(); // Pastikan baris ini ada
+require('dotenv').config(); 
 
 app.use(express.json());
 app.use(cors());
 
-// --- PERUBAHAN 1: DATABASE ---
+// ==========================================
+// 1. TAMBAHAN RUTE HALAMAN DEPAN (ROOT)
+// ==========================================
+// Ini agar saat link utama dibuka tidak 404
+app.get('/', (req, res) => {
+    res.json({
+        message: "Order Service is Running... 🚀",
+        status: "Active",
+        routes: {
+            transactions: "/transactions"
+        }
+    });
+});
+
+// ==========================================
+// 2. KONEKSI DATABASE
+// ==========================================
 const mongoURI = process.env.MONGO_URL;
+
+// Cek apakah env variable ada (untuk debugging)
+if (!mongoURI) {
+    console.error("❌ FATAL ERROR: MONGO_URL tidak ditemukan di Environment Variables!");
+}
 
 mongoose.connect(mongoURI, {
     serverSelectionTimeoutMS: 5000
@@ -19,6 +40,7 @@ mongoose.connect(mongoURI, {
     .then(() => console.log('Transaction DB Connected... ✅'))
     .catch(err => console.error('DB Connection Error: ❌', err));
 
+// Model Schema
 const Transaction = mongoose.model('Transaction', {
     product_id: String,
     product_name: String,
@@ -27,21 +49,22 @@ const Transaction = mongoose.model('Transaction', {
     date: { type: Date, default: Date.now }
 });
 
+// ==========================================
+// 3. RUTE TRANSAKSI
+// ==========================================
+
 // CREATE TRANSACTION
 app.post('/transactions', async (req, res) => {
     try {
         const { product_id, quantity } = req.body;
 
-        // --- PERUBAHAN 2: URL PRODUK DINAMIS ---
-        // Kita ambil URL Product Service dari Environment Variable
-        // Contoh nanti di Vercel diisi: https://product-service-kappa.vercel.app
         const PRODUCT_URL = process.env.PRODUCT_SERVICE_URL; 
         
         if (!PRODUCT_URL) {
             throw new Error("PRODUCT_SERVICE_URL belum disetting di Vercel!");
         }
 
-        // Panggil Product Service yang sudah online
+        // Panggil Product Service
         const response = await axios.get(`${PRODUCT_URL}/products/${product_id}`);
         const productData = response.data;
 
